@@ -1,0 +1,7 @@
+name = "image-background-remover"
+compatibility_date = "2024-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "image-bg-remover-db"
+database_id = "be9b6e70-f5ef-4cd8-a4e2-75ddbbf8514d"
