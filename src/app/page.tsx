@@ -100,19 +100,6 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 text-white">
-      {/* Header */}
-      <header className="border-b border-white/10 px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center gap-3">
-          <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center text-lg">
-            ✂️
-          </div>
-          <div>
-            <h1 className="text-lg font-bold">BG Remover</h1>
-            <p className="text-xs text-white/50">AI 一键去除图片背景</p>
-          </div>
-        </div>
-      </header>
-
       <main className="max-w-4xl mx-auto px-6 py-12">
         {/* Hero */}
         <div className="text-center mb-12">
