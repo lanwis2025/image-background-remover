@@ -2,8 +2,6 @@
 
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/context/AuthContext";
-import Image from "next/image";
-
 declare global {
   interface Window {
     google?: {
@@ -92,7 +90,8 @@ export default function AuthHeader() {
   if (user) {
     return (
       <div className="flex items-center gap-3">
-        <Image
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
           src={user.picture}
           alt={user.name}
           width={32}
