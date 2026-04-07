@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
+import AuthHeader from "@/components/AuthHeader";
+import { AuthProvider } from "@/context/AuthContext";
 
 const geist = Geist({ subsets: ["latin"] });
 
@@ -18,7 +20,25 @@ export default function RootLayout({
 }) {
   return (
     <html lang="zh-CN">
-      <body className={geist.className}>{children}</body>
+      <body className={geist.className}>
+        <AuthProvider>
+          <header className="border-b border-white/10 px-6 py-4 bg-gradient-to-r from-slate-900 to-purple-950">
+            <div className="max-w-4xl mx-auto flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center text-lg">
+                  ✂️
+                </div>
+                <div>
+                  <h1 className="text-lg font-bold text-white">BG Remover</h1>
+                  <p className="text-xs text-white/50">AI 一键去除图片背景</p>
+                </div>
+              </div>
+              <AuthHeader />
+            </div>
+          </header>
+          {children}
+        </AuthProvider>
+      </body>
     </html>
   );
 }

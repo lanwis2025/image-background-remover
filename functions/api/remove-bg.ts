@@ -1,8 +1,44 @@
 interface Env {
   REMOVE_BG_API_KEY: string;
+  DB: D1Database;
+}
+
+async function getSessionUser(
+  request: Request,
+  db: D1Database
+): Promise<{ id: number } | null> {
+  const cookieHeader = request.headers.get("Cookie") ?? "";
+  const sessionToken = cookieHeader
+    .split(";")
+    .map((c) => c.trim())
+    .find((c) => c.startsWith("session="))
+    ?.split("=")[1];
+
+  if (!sessionToken) return null;
+
+  const now = Math.floor(Date.now() / 1000);
+  const row = await db
+    .prepare(
+      `SELECT u.id FROM sessions s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.session_token = ?1 AND s.expires_at > ?2`
+    )
+    .bind(sessionToken, now)
+    .first<{ id: number }>();
+
+  return row ?? null;
 }
 
 export const onRequestPost: PagesFunction<Env> = async (context) => {
+  // Auth check
+  const user = await getSessionUser(context.request, context.env.DB);
+  if (!user) {
+    return Response.json(
+      { error: "请先登录后再使用去背景功能" },
+      { status: 401 }
+    );
+  }
+
   try {
     const formData = await context.request.formData();
     const imageFile = formData.get("image") as File | null;

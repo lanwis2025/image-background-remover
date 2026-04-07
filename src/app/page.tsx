@@ -1,10 +1,12 @@
 "use client";
 
 import { useState, useCallback, useRef } from "react";
+import { useAuth } from "@/context/AuthContext";
 
 type Status = "idle" | "uploading" | "processing" | "done" | "error";
 
 export default function Home() {
+  const { user, loading } = useAuth();
   const [status, setStatus] = useState<Status>("idle");
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
@@ -13,51 +15,66 @@ export default function Home() {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const processFile = useCallback(async (file: File) => {
-    // 前端校验
-    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
-    if (!allowedTypes.includes(file.type)) {
-      setErrorMsg("请上传 JPG/PNG/WebP 格式图片");
-      setStatus("error");
-      return;
-    }
-    if (file.size > 10 * 1024 * 1024) {
-      setErrorMsg("图片大小不能超过 10MB");
-      setStatus("error");
-      return;
-    }
-
-    setFileName(file.name);
-    setOriginalUrl(URL.createObjectURL(file));
-    setResultUrl(null);
-    setErrorMsg("");
-    setStatus("uploading");
-
-    const formData = new FormData();
-    formData.append("image", file);
-
-    try {
-      setStatus("processing");
-      const res = await fetch("/api/remove-bg", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        setErrorMsg(data.error || "处理失败，请稍后重试");
+  const processFile = useCallback(
+    async (file: File) => {
+      if (!user) {
+        setErrorMsg("请先登录后再使用去背景功能");
         setStatus("error");
         return;
       }
 
-      const blob = await res.blob();
-      setResultUrl(URL.createObjectURL(blob));
-      setStatus("done");
-    } catch {
-      setErrorMsg("请求超时，请检查网络后重试");
-      setStatus("error");
-    }
-  }, []);
+      const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+      if (!allowedTypes.includes(file.type)) {
+        setErrorMsg("请上传 JPG/PNG/WebP 格式图片");
+        setStatus("error");
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        setErrorMsg("图片大小不能超过 10MB");
+        setStatus("error");
+        return;
+      }
+
+      setFileName(file.name);
+      setOriginalUrl(URL.createObjectURL(file));
+      setResultUrl(null);
+      setErrorMsg("");
+      setStatus("uploading");
+
+      const formData = new FormData();
+      formData.append("image", file);
+
+      try {
+        setStatus("processing");
+        const res = await fetch("/api/remove-bg", {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+
+        if (res.status === 401) {
+          setErrorMsg("请先登录后再使用去背景功能");
+          setStatus("error");
+          return;
+        }
+
+        if (!res.ok) {
+          const data = await res.json();
+          setErrorMsg(data.error || "处理失败，请稍后重试");
+          setStatus("error");
+          return;
+        }
+
+        const blob = await res.blob();
+        setResultUrl(URL.createObjectURL(blob));
+        setStatus("done");
+      } catch {
+        setErrorMsg("请求超时，请检查网络后重试");
+        setStatus("error");
+      }
+    },
+    [user]
+  );
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -98,21 +115,11 @@ export default function Home() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  // Determine if upload area should be interactive
+  const isLoggedIn = !!user;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-950 to-slate-900 text-white">
-      {/* Header */}
-      <header className="border-b border-white/10 px-6 py-4">
-        <div className="max-w-4xl mx-auto flex items-center gap-3">
-          <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center text-lg">
-            ✂️
-          </div>
-          <div>
-            <h1 className="text-lg font-bold">BG Remover</h1>
-            <p className="text-xs text-white/50">AI 一键去除图片背景</p>
-          </div>
-        </div>
-      </header>
-
       <main className="max-w-4xl mx-auto px-6 py-12">
         {/* Hero */}
         <div className="text-center mb-12">
@@ -124,18 +131,29 @@ export default function Home() {
           </p>
         </div>
 
+        {/* Login required banner */}
+        {!loading && !isLoggedIn && (
+          <div className="mb-6 px-5 py-4 rounded-xl bg-purple-500/10 border border-purple-400/30 text-center text-purple-200 text-sm">
+            🔐 请点击右上角 <strong>Google 登录</strong> 后使用去背景功能
+          </div>
+        )}
+
         {/* Upload Area */}
         {status === "idle" || status === "error" ? (
           <div
-            className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${
-              isDragging
-                ? "border-purple-400 bg-purple-500/10"
-                : "border-white/20 hover:border-purple-400 hover:bg-white/5"
+            className={`border-2 border-dashed rounded-2xl p-12 text-center transition-all ${
+              isLoggedIn
+                ? `cursor-pointer ${
+                    isDragging
+                      ? "border-purple-400 bg-purple-500/10"
+                      : "border-white/20 hover:border-purple-400 hover:bg-white/5"
+                  }`
+                : "border-white/10 opacity-50 cursor-not-allowed"
             }`}
-            onDrop={handleDrop}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onClick={() => fileInputRef.current?.click()}
+            onDrop={isLoggedIn ? handleDrop : undefined}
+            onDragOver={isLoggedIn ? handleDragOver : undefined}
+            onDragLeave={isLoggedIn ? handleDragLeave : undefined}
+            onClick={() => isLoggedIn && fileInputRef.current?.click()}
           >
             <input
               ref={fileInputRef}
@@ -143,12 +161,13 @@ export default function Home() {
               accept="image/jpeg,image/png,image/webp"
               className="hidden"
               onChange={handleFileChange}
+              disabled={!isLoggedIn}
             />
             <div className="text-5xl mb-4">🖼️</div>
-            <p className="text-xl font-medium mb-2">拖拽图片到这里，或点击上传</p>
-            <p className="text-white/40 text-sm">
-              支持 JPG、PNG、WebP，最大 10MB
+            <p className="text-xl font-medium mb-2">
+              {isLoggedIn ? "拖拽图片到这里，或点击上传" : "请先登录后使用"}
             </p>
+            <p className="text-white/40 text-sm">支持 JPG、PNG、WebP，最大 10MB</p>
             {status === "error" && (
               <div className="mt-4 px-4 py-2 bg-red-500/20 border border-red-500/40 rounded-lg text-red-300 text-sm">
                 ❌ {errorMsg}
@@ -183,19 +202,13 @@ export default function Home() {
         {status === "done" && originalUrl && resultUrl && (
           <div className="space-y-6">
             <div className="grid grid-cols-2 gap-6">
-              {/* Original */}
               <div className="space-y-2">
                 <p className="text-sm text-white/50 text-center">原图</p>
                 <div className="rounded-xl overflow-hidden border border-white/10 bg-white/5">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={originalUrl}
-                    alt="原图"
-                    className="w-full object-contain max-h-72"
-                  />
+                  <img src={originalUrl} alt="原图" className="w-full object-contain max-h-72" />
                 </div>
               </div>
-              {/* Result */}
               <div className="space-y-2">
                 <p className="text-sm text-white/50 text-center">去背景结果</p>
                 <div
@@ -206,16 +219,10 @@ export default function Home() {
                   }}
                 >
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={resultUrl}
-                    alt="去背景结果"
-                    className="w-full object-contain max-h-72"
-                  />
+                  <img src={resultUrl} alt="去背景结果" className="w-full object-contain max-h-72" />
                 </div>
               </div>
             </div>
-
-            {/* Actions */}
             <div className="flex gap-4 justify-center">
               <button
                 onClick={handleDownload}
@@ -234,7 +241,6 @@ export default function Home() {
         )}
       </main>
 
-      {/* Footer */}
       <footer className="border-t border-white/10 px-6 py-6 mt-12">
         <div className="max-w-4xl mx-auto text-center text-white/30 text-sm">
           <p>
