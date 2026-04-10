@@ -100,6 +100,18 @@ export default function AuthHeader() {
           referrerPolicy="no-referrer"
         />
         <span className="text-sm text-white/80 hidden sm:block">{user.name}</span>
+        {/* Credits badge */}
+        <span
+          className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+            user.plan === "pro"
+              ? "bg-purple-500/30 text-purple-200 border border-purple-400/40"
+              : "bg-white/10 text-white/60"
+          }`}
+          title={`剩余 ${user.credits} 次`}
+        >
+          {user.plan === "pro" ? "✨ " : "🪙 "}
+          {user.credits}
+        </span>
         <button
           onClick={signOut}
           className="text-xs px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white/70 hover:text-white transition-colors"

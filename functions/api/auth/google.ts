@@ -4,6 +4,8 @@
  *
  * Verifies the Google ID token, upserts the user in D1,
  * creates a session, and sets an HttpOnly session cookie.
+ *
+ * 新用户注册时自动赠送 3 credits（终身）。
  */
 
 interface Env {
@@ -13,6 +15,7 @@ interface Env {
 
 const SESSION_DURATION_DAYS = 30;
 const COOKIE_NAME = "session";
+const NEW_USER_CREDITS = 3;
 
 function generateToken(bytes = 32): string {
   const arr = new Uint8Array(bytes);
@@ -59,20 +62,26 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     const expiresAt = now + SESSION_DURATION_DAYS * 86400;
 
     // Upsert user
+    // 新用户：写入 credits = NEW_USER_CREDITS
+    // 老用户：只更新 email/name/picture/last_login_at，不动 credits
     await context.env.DB.prepare(`
-      INSERT INTO users (google_id, email, name, picture, created_at, last_login_at)
-      VALUES (?1, ?2, ?3, ?4, ?5, ?5)
+      INSERT INTO users (google_id, email, name, picture, credits, created_at, last_login_at)
+      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?6)
       ON CONFLICT(google_id) DO UPDATE SET
         email = excluded.email,
         name = excluded.name,
         picture = excluded.picture,
         last_login_at = excluded.last_login_at
-    `).bind(info.sub, info.email, info.name, info.picture, now).run();
+    `)
+      .bind(info.sub, info.email, info.name, info.picture, NEW_USER_CREDITS, now)
+      .run();
 
-    // Get user id
+    // Get user
     const user = await context.env.DB.prepare(
-      "SELECT id FROM users WHERE google_id = ?1"
-    ).bind(info.sub).first<{ id: number }>();
+      "SELECT id, plan, credits, total_used FROM users WHERE google_id = ?1"
+    )
+      .bind(info.sub)
+      .first<{ id: number; plan: string; credits: number; total_used: number }>();
 
     if (!user) throw new Error("User not found after upsert");
 
@@ -81,9 +90,11 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
     await context.env.DB.prepare(`
       INSERT INTO sessions (session_token, user_id, created_at, expires_at)
       VALUES (?1, ?2, ?3, ?4)
-    `).bind(sessionToken, user.id, now, expiresAt).run();
+    `)
+      .bind(sessionToken, user.id, now, expiresAt)
+      .run();
 
-    // Clean up old sessions for this user (keep last 5)
+    // Keep only last 5 sessions
     await context.env.DB.prepare(`
       DELETE FROM sessions
       WHERE user_id = ?1
@@ -91,7 +102,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           SELECT id FROM sessions WHERE user_id = ?1
           ORDER BY created_at DESC LIMIT 5
         )
-    `).bind(user.id).run();
+    `)
+      .bind(user.id)
+      .run();
 
     const cookieValue = [
       `${COOKIE_NAME}=${sessionToken}`,
@@ -109,6 +122,9 @@ export const onRequestPost: PagesFunction<Env> = async (context) => {
           name: info.name,
           email: info.email,
           picture: info.picture,
+          plan: user.plan,
+          credits: user.credits,
+          total_used: user.total_used,
         },
       }),
       {

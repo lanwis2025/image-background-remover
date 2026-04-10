@@ -5,11 +5,55 @@ import { useAuth } from "@/context/AuthContext";
 
 type Status = "idle" | "uploading" | "processing" | "done" | "error";
 
+/**
+ * Overlay a repeating diagonal watermark on the image using Canvas.
+ * Used for free-plan users to discourage direct screenshot downloads.
+ */
+async function applyWatermark(blob: Blob): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const objectUrl = URL.createObjectURL(blob);
+    img.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width;
+      canvas.height = img.height;
+      const ctx = canvas.getContext("2d")!;
+
+      // Draw image
+      ctx.drawImage(img, 0, 0);
+
+      // Repeating diagonal watermark
+      const fontSize = Math.max(14, Math.floor(img.width * 0.028));
+      ctx.save();
+      ctx.globalAlpha = 0.35;
+      ctx.fillStyle = "#ffffff";
+      ctx.font = `${fontSize}px Arial, sans-serif`;
+      ctx.textAlign = "center";
+
+      const step = fontSize * 7;
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate(-Math.PI / 6);
+      for (let y = -canvas.height * 1.5; y < canvas.height * 1.5; y += step) {
+        for (let x = -canvas.width * 1.5; x < canvas.width * 1.5; x += step) {
+          ctx.fillText("imagebackgroundremover.solutions", x, y);
+        }
+      }
+      ctx.restore();
+
+      URL.revokeObjectURL(objectUrl);
+      resolve(canvas.toDataURL("image/png"));
+    };
+    img.src = objectUrl;
+  });
+}
+
 export default function Home() {
-  const { user, loading } = useAuth();
+  const { user, loading, refreshUser } = useAuth();
   const [status, setStatus] = useState<Status>("idle");
   const [originalUrl, setOriginalUrl] = useState<string | null>(null);
   const [resultUrl, setResultUrl] = useState<string | null>(null);
+  const [userPlan, setUserPlan] = useState<"free" | "pro">("free");
+  const [creditsRemaining, setCreditsRemaining] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [fileName, setFileName] = useState<string>("");
   const [isDragging, setIsDragging] = useState(false);
@@ -58,22 +102,53 @@ export default function Home() {
           return;
         }
 
+        if (res.status === 402) {
+          setErrorMsg("Credits 已用完，请购买更多额度后继续使用");
+          setStatus("error");
+          await refreshUser();
+          return;
+        }
+
         if (!res.ok) {
-          const data = await res.json();
-          setErrorMsg(data.error || "处理失败，请稍后重试");
+          let errMsg = "处理失败，请稍后重试";
+          try {
+            const data = await res.json();
+            if (data?.error) errMsg = data.error;
+          } catch {
+            // ignore parse error
+          }
+          setErrorMsg(errMsg);
           setStatus("error");
           return;
         }
 
+        // Read plan info from response headers
+        const plan = (res.headers.get("X-User-Plan") ?? "free") as "free" | "pro";
+        const remaining = parseInt(res.headers.get("X-Credits-Remaining") ?? "-1", 10);
+        setUserPlan(plan);
+        if (remaining >= 0) setCreditsRemaining(remaining);
+
         const blob = await res.blob();
-        setResultUrl(URL.createObjectURL(blob));
+
+        // Apply watermark for free users
+        let displayUrl: string;
+        if (plan === "free") {
+          displayUrl = await applyWatermark(blob);
+        } else {
+          displayUrl = URL.createObjectURL(blob);
+        }
+
+        setResultUrl(displayUrl);
         setStatus("done");
+
+        // Refresh user info to sync credits in header
+        await refreshUser();
       } catch {
         setErrorMsg("请求超时，请检查网络后重试");
         setStatus("error");
       }
     },
-    [user]
+    [user, refreshUser]
   );
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -112,10 +187,10 @@ export default function Home() {
     setResultUrl(null);
     setErrorMsg("");
     setFileName("");
+    setCreditsRemaining(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // Determine if upload area should be interactive
   const isLoggedIn = !!user;
 
   return (
@@ -201,6 +276,22 @@ export default function Home() {
         {/* Result */}
         {status === "done" && originalUrl && resultUrl && (
           <div className="space-y-6">
+            {/* Plan badge */}
+            {userPlan === "free" && (
+              <div className="px-4 py-2 rounded-lg bg-amber-500/10 border border-amber-400/30 text-amber-200 text-sm text-center">
+                💡 免费版结果含水印，
+                <span className="font-medium">升级 Pro</span> 可获取无水印高清图
+                {creditsRemaining !== null && (
+                  <span className="ml-2 text-white/50">· 剩余 {creditsRemaining} 次</span>
+                )}
+              </div>
+            )}
+            {userPlan === "pro" && creditsRemaining !== null && (
+              <div className="px-4 py-2 rounded-lg bg-purple-500/10 border border-purple-400/20 text-purple-200 text-sm text-center">
+                ✨ Pro 版 · 剩余 {creditsRemaining} 次
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-2">
                 <p className="text-sm text-white/50 text-center">原图</p>
@@ -228,7 +319,7 @@ export default function Home() {
                 onClick={handleDownload}
                 className="px-8 py-3 bg-purple-600 hover:bg-purple-500 rounded-xl font-medium transition-colors flex items-center gap-2"
               >
-                ⬇️ 下载 PNG
+                ⬇️ 下载 PNG{userPlan === "free" ? "（含水印）" : ""}
               </button>
               <button
                 onClick={handleReset}
