@@ -1,5 +1,7 @@
 name = "image-background-remover"
 compatibility_date = "2024-01-01"
+account_id = "05d2030318e9b7986931dbc60b690784"
+pages_build_output_dir = ".next"
 
 [[d1_databases]]
 binding = "DB"
