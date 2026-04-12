@@ -18,15 +18,35 @@ declare global {
 
 const CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!;
 
+const BUTTON_CONFIG = {
+  type: "standard",
+  shape: "pill",
+  theme: "outline",
+  text: "signin_with",
+  size: "medium",
+  logo_alignment: "left",
+};
+
 export default function AuthHeader() {
   const { user, loading, signIn, signOut } = useAuth();
   const buttonRef = useRef<HTMLDivElement>(null);
-  const sdkReady = useRef(false);
+  const initializedRef = useRef(false);
 
+  // Initialize Google Identity Services once
   useEffect(() => {
     if (!CLIENT_ID) return;
 
+    const renderButton = () => {
+      if (!buttonRef.current || user) return;
+      window.google?.accounts.id.renderButton(buttonRef.current, BUTTON_CONFIG);
+    };
+
     const init = () => {
+      if (initializedRef.current) {
+        // Already initialized — just re-render button if needed
+        renderButton();
+        return;
+      }
       window.google?.accounts.id.initialize({
         client_id: CLIENT_ID,
         callback: async (response: { credential: string }) => {
@@ -39,27 +59,23 @@ export default function AuthHeader() {
         auto_select: false,
         cancel_on_tap_outside: true,
       });
-      sdkReady.current = true;
+      initializedRef.current = true;
       renderButton();
     };
 
-    const renderButton = () => {
-      if (!buttonRef.current || user) return;
-      window.google?.accounts.id.renderButton(buttonRef.current, {
-        type: "standard",
-        shape: "pill",
-        theme: "outline",
-        text: "signin_with",
-        size: "medium",
-        logo_alignment: "left",
-      });
-    };
-
-    if (document.getElementById("gsi-script")) {
-      if (window.google) init();
+    const existingScript = document.getElementById("gsi-script");
+    if (existingScript) {
+      // Script tag exists — may or may not be loaded yet
+      if (window.google) {
+        init();
+      } else {
+        // Not loaded yet: wait for it
+        existingScript.addEventListener("load", init, { once: true });
+      }
       return;
     }
 
+    // Inject script for the first time
     const script = document.createElement("script");
     script.id = "gsi-script";
     script.src = "https://accounts.google.com/gsi/client";
@@ -68,20 +84,6 @@ export default function AuthHeader() {
     script.onload = init;
     document.head.appendChild(script);
   }, [signIn, user]);
-
-  // Re-render button after logout
-  useEffect(() => {
-    if (!user && sdkReady.current && buttonRef.current && window.google) {
-      window.google.accounts.id.renderButton(buttonRef.current, {
-        type: "standard",
-        shape: "pill",
-        theme: "outline",
-        text: "signin_with",
-        size: "medium",
-        logo_alignment: "left",
-      });
-    }
-  }, [user]);
 
   if (loading) {
     return <div className="w-28 h-9 rounded-full bg-white/10 animate-pulse" />;
