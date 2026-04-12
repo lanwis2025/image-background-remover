@@ -7,6 +7,10 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -15,10 +19,11 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Install dependencies with yarn
+      - name: Install dependencies and wrangler via yarn
         run: |
           corepack enable
-          yarn install --immutable 2>/dev/null || yarn install
+          yarn add --dev wrangler 2>/dev/null || true
+          yarn install 2>/dev/null || yarn install --no-immutable
 
       - name: Build
         run: yarn build
@@ -26,8 +31,4 @@ jobs:
           NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${{ secrets.NEXT_PUBLIC_GOOGLE_CLIENT_ID }}
 
       - name: Deploy to Cloudflare Pages
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy out --project-name=image-background-remover --branch=main
+        run: yarn wrangler pages deploy out --project-name=image-background-remover --branch=main
